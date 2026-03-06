@@ -1,5 +1,4 @@
 const express = require('express');
-require('dotenv').config();
 const firebase = require('firebase/compat/app');
 require('firebase/compat/database');
 const nodemailer = require('nodemailer');
