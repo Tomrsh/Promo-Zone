@@ -1,11 +1,12 @@
 const express = require('express');
-const firebase = require('firebase/compat/app'); // 'compat' add kiya
-require('firebase/compat/database');           // 'compat' add kiya
+const firebase = require('firebase/compat/app');
+require('firebase/compat/database');
 const nodemailer = require('nodemailer');
 
 const app = express();
+app.use(express.json());
 
-// --- 1. AAPKA FIREBASE CONFIG ---
+// --- 1. FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyAb7V8Xxg5rUYi8UKChEd3rR5dglJ6bLhU",
     authDomain: "t2-storage-4e5ca.firebaseapp.com",
@@ -13,31 +14,28 @@ const firebaseConfig = {
     projectId: "t2-storage-4e5ca"
 };
 
-// Firebase Initialize (Compat mode)
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.database();
 
-// --- 2. MAIL CONFIGURATION ---
-const ADMIN_EMAIL = 'tomeshmourya408@gmail.com'; // Apna email yaha dalein
-const GMAIL_USER = 'tinumourya0@gmail.com';  // Apna email yaha dalein
-const GMAIL_PASS = 'aztg klva bidf hwyl';      // 16-digit App Password (no spaces)
+// --- 2. MAIL CONFIG (Environment Variables use karein) ---
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'tinu.alerts@gmail.com'; 
+const GMAIL_USER = process.env.GMAIL_USER || 'tinu.alerts@gmail.com';
+const GMAIL_PASS = process.env.GMAIL_PASS; // Render Dashboard me config karein
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: { user: GMAIL_USER, pass: GMAIL_PASS }
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+        user: GMAIL_USER,
+        pass: GMAIL_PASS
+    }
 });
 
-// Transporter Check
-transporter.verify((error) => {
-    if (error) console.log("❌ Mail Error: ", error);
-    else console.log("✅ Mail Server Ready");
-});
-
-// --- 3. REALTIME LISTENER ---
-console.log("👀 Monitoring Firebase for new reels...");
-
+// --- 3. BACKGROUND LISTENER ---
 db.ref('users').on('value', (snapshot) => {
     const allUsers = snapshot.val();
     if (!allUsers) return;
@@ -47,48 +45,48 @@ db.ref('users').on('value', (snapshot) => {
         if (userData.reels) {
             for (let reelId in userData.reels) {
                 const reel = userData.reels[reelId];
-
-                // Check: Pending status aur pehle notify na hua ho
                 if (reel.status === 'Pending' && !reel.adminNotified) {
-                    
-                    console.log(`🚀 New Reel from ${userData.email || userId}! Sending mail...`);
-                    
-                    sendMail(userData.email || 'No Email', reel);
-
-                    // Flag update karein taaki loop baar-baar mail na bheje
-                    db.ref(`users/${userId}/reels/${reelId}`).update({
-                        adminNotified: true
-                    });
+                    console.log(`Sending email for: ${reel.url}`);
+                    sendMail(userData.email || 'No Email', reel, userId, reelId);
                 }
             }
         }
     }
 });
 
-async function sendMail(userEmail, reelData) {
+async function sendMail(userEmail, reelData, userId, reelId) {
     const mailOptions = {
-        from: `"PromoZone Bot" <${GMAIL_USER}>`,
+        from: `"PromoZone Admin" <${GMAIL_USER}>`,
         to: ADMIN_EMAIL,
         subject: `New Reel: ${reelData.campaignTitle}`,
-        html: `
-            <div style="font-family: sans-serif; border: 1px solid #4f46e5; padding: 20px;">
-                <h2 style="color: #4f46e5;">New Submission</h2>
-                <p><strong>User:</strong> ${userEmail}</p>
-                <p><strong>Campaign:</strong> ${reelData.campaignTitle}</p>
-                <p><strong>Reel URL:</strong> <a href="${reelData.url}">${reelData.url}</a></p>
-                <p><strong>Rate:</strong> ₹${reelData.ratePerMillion}</p>
-            </div>
-        `
+        html: `<h3>New Submission</h3>
+               <p><b>User:</b> ${userEmail}</p>
+               <p><b>Link:</b> <a href="${reelData.url}">${reelData.url}</a></p>
+               <p><b>Rate:</b> ₹${reelData.ratePerMillion}</p>`
     };
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log("✅ Email sent!");
-    } catch (error) {
-        console.error("❌ Email failed:", error);
+        // Mail bhejte hi flag update karein taki loop na bane
+        await db.ref(`users/${userId}/reels/${reelId}`).update({ adminNotified: true });
+        console.log("✅ Email sent & DB updated");
+    } catch (e) {
+        console.error("❌ Mail Error:", e.message);
     }
 }
 
-const PORT = 3000;
-app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+// Admin Panel Route
+app.get('/admin', (req, res) => {
+    // ... (Wahi admin panel wala HTML jo pehle diya tha)
+    res.send('Admin Panel Running - Data will show here.'); 
+});
+
+// Main Route for Render Health Check
+app.get('/', (req, res) => res.send("PromoZone Monitor is Live!"));
+
+// --- RENDER PORT BINDING ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+});
 
